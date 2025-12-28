@@ -6,12 +6,24 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/rohitvpatil0810/now-tuned-sync-server/internal/model"
 	"github.com/rohitvpatil0810/now-tuned-sync-server/internal/store"
 )
 
 type MusicStateHandler struct {
 	store *store.PartitionedMusicState
+}
+
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true // Allow all origins - for testing purposes
+	},
+}
+
+type WSClient struct {
+	conn *websocket.Conn
+	send chan *model.MusicState
 }
 
 func NewMusicStateHandler(store *store.PartitionedMusicState) *MusicStateHandler {
@@ -71,6 +83,58 @@ func (h *MusicStateHandler) GetWinnerMusicState(w http.ResponseWriter, r *http.R
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
+}
+
+func (h *MusicStateHandler) WinnerWebSocket(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Println("WebSocket upgrade error:", err)
+		return
+	}
+	defer conn.Close()
+
+	log.Println("New WebSocket connection")
+
+	// Send current winner immediately upon connection
+	winner := h.store.Winner()
+	if winner != nil {
+		// Create response without client field
+		response := map[string]interface{}{
+			"metadata":      winner.Metadata,
+			"playbackState": winner.PlaybackState,
+			"updatedAt":     winner.UpdatedAt,
+			"version":       winner.Version,
+		}
+
+		if err := conn.WriteJSON(response); err != nil {
+			log.Println("WebSocket write error:", err)
+			return
+		}
+	}
+
+	// Register client to receive updates
+	client := &WSClient{
+		conn: conn,
+		send: make(chan *model.MusicState, 10),
+	}
+	h.store.RegisterClient(client.send)
+	defer h.store.UnregisterClient(client.send)
+
+	// Listen for updates and send to client
+	for state := range client.send {
+		// Create response without client field
+		response := map[string]interface{}{
+			"metadata":      state.Metadata,
+			"playbackState": state.PlaybackState,
+			"updatedAt":     state.UpdatedAt,
+			"version":       state.Version,
+		}
+
+		if err := client.conn.WriteJSON(response); err != nil {
+			log.Println("WebSocket write error:", err)
+			return
+		}
+	}
 }
 
 func (h *MusicStateHandler) DeleteMusicState(w http.ResponseWriter, r *http.Request) {

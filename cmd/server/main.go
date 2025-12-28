@@ -27,6 +27,7 @@ func main() {
 
 	mux.HandleFunc("/music-state", musicStateHandler.UpdateMusicState)
 	mux.HandleFunc("/music-state/winner", musicStateHandler.GetWinnerMusicState)
+	mux.HandleFunc("/music-state/winner/ws", musicStateHandler.WinnerWebSocket)
 	mux.HandleFunc("/music-state/delete", musicStateHandler.DeleteMusicState)
 
 	if err := http.ListenAndServe(addr, c.Handler(mux)); err != nil {
