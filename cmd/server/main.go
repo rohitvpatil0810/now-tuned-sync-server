@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/rohitvpatil0810/now-tuned-sync-server/internal/handler"
 	"github.com/rohitvpatil0810/now-tuned-sync-server/internal/store"
@@ -17,7 +18,11 @@ func main() {
 
 	c := cors.AllowAll()
 
-	addr := ":8080"
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	addr := ":" + port
 	log.Println("now-tuned-sync-server listening on", addr)
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
