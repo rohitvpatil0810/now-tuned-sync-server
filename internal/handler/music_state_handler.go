@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/rohitvpatil0810/now-tuned-sync-server/internal/model"
 	"github.com/rohitvpatil0810/now-tuned-sync-server/internal/store"
@@ -31,6 +32,9 @@ func (h *MusicStateHandler) UpdateMusicState(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
+
+	// update timestamp using time in req
+	req.UpdatedAt = time.Now()
 
 	log.Printf("Updating music state for clientId: %s, playbackState: %s\n", req.Client.ClientID, req.PlaybackState)
 
