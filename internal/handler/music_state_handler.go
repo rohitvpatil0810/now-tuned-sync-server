@@ -32,7 +32,7 @@ func (h *MusicStateHandler) UpdateMusicState(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	log.Println("Incoming request state 2 : ", req)
+	log.Printf("Updating music state for clientId: %s, playbackState: %s\n", req.Client.ClientID, req.PlaybackState)
 
 	h.store.Update(req)
 
@@ -52,4 +52,24 @@ func (h *MusicStateHandler) GetWinnerMusicState(w http.ResponseWriter, r *http.R
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(winner)
+}
+
+func (h *MusicStateHandler) DeleteMusicState(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	clientID := r.URL.Query().Get("clientId")
+	if clientID == "" {
+		http.Error(w, "clientId query parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	log.Println("Deleting music state for clientId:", clientID)
+	h.store.Remove(clientID)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
 }
