@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -24,6 +26,8 @@ var upgrader = websocket.Upgrader{
 type WSClient struct {
 	conn *websocket.Conn
 	send chan *model.MusicState
+	done chan struct{}
+	mu   sync.Mutex
 }
 
 func NewMusicStateHandler(store *store.PartitionedMusicState) *MusicStateHandler {
@@ -92,32 +96,73 @@ func (h *MusicStateHandler) WinnerWebSocket(w http.ResponseWriter, r *http.Reque
 	}
 	defer conn.Close()
 
-	log.Println("New WebSocket connection")
-
-	// Send current winner immediately upon connection
-	winner := h.store.Winner()
-	response := toResponseFormat(winner)
-	if response != nil {
-		if err := conn.WriteJSON(response); err != nil {
-			log.Println("WebSocket write error:", err)
-			return
-		}
-	}
+	log.Println("New WebSocket connection established")
 
 	// Register client to receive updates
 	client := &WSClient{
 		conn: conn,
 		send: make(chan *model.MusicState, 10),
+		done: make(chan struct{}),
 	}
 	h.store.RegisterClient(client.send)
-	defer h.store.UnregisterClient(client.send)
+	defer func() {
+		h.store.UnregisterClient(client.send)
+		close(client.send) // Close the channel to prevent goroutine leaks
+		log.Println("WebSocket connection cleaned up")
+	}()
+
+	// Start a goroutine to read from the WebSocket
+	// This detects when the client disconnects
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		defer close(client.done)
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				log.Println("WebSocket read error (client disconnected):", err)
+				cancel()
+				return
+			}
+		}
+	}()
+
+	// Send current winner immediately upon connection
+	winner := h.store.Winner()
+	response := toResponseFormat(winner)
+	if response != nil {
+		conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		if err := conn.WriteJSON(response); err != nil {
+			log.Println("WebSocket initial write error:", err)
+			return
+		}
+	}
 
 	// Listen for updates and send to client
-	for state := range client.send {
-		response := toResponseFormat(state)
-		if err := client.conn.WriteJSON(response); err != nil {
-			log.Println("WebSocket write error:", err)
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("WebSocket context cancelled, closing connection")
 			return
+		case <-client.done:
+			log.Println("WebSocket client done signal received")
+			return
+		case state, ok := <-client.send:
+			if !ok {
+				log.Println("WebSocket send channel closed")
+				return
+			}
+			response := toResponseFormat(state)
+			// Set write deadline to detect stale connections
+			client.mu.Lock()
+			client.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			err := client.conn.WriteJSON(response)
+			client.mu.Unlock()
+			if err != nil {
+				log.Println("WebSocket write error:", err)
+				return
+			}
 		}
 	}
 }
