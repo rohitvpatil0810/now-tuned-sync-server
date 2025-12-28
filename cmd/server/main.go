@@ -3,10 +3,19 @@ package main
 import (
 	"log"
 	"net/http"
+
+	"github.com/rohitvpatil0810/now-tuned-sync-server/internal/handler"
+	"github.com/rohitvpatil0810/now-tuned-sync-server/internal/store"
+	"github.com/rs/cors"
 )
 
 func main() {
 	mux := http.NewServeMux()
+
+	store := store.NewPartitionedMusicState()
+	musicStateHandler := handler.NewMusicStateHandler(store)
+
+	c := cors.AllowAll()
 
 	addr := ":8080"
 	log.Println("now-tuned-sync-server listening on", addr)
@@ -16,7 +25,10 @@ func main() {
 		w.Write([]byte("Hello From now-tuned-sync-server"))
 	})
 
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	mux.HandleFunc("/music-state", musicStateHandler.UpdateMusicState)
+	mux.HandleFunc("/music-state/winner", musicStateHandler.GetWinnerMusicState)
+
+	if err := http.ListenAndServe(addr, c.Handler(mux)); err != nil {
 		log.Fatal(err)
 	}
 }
