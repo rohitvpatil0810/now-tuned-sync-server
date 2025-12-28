@@ -53,9 +53,24 @@ func (h *MusicStateHandler) GetWinnerMusicState(w http.ResponseWriter, r *http.R
 
 	winner := h.store.Winner()
 
+	if winner == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(nil)
+		return
+	}
+
+	// Create response without client field
+	response := map[string]interface{}{
+		"metadata":      winner.Metadata,
+		"playbackState": winner.PlaybackState,
+		"updatedAt":     winner.UpdatedAt,
+		"version":       winner.Version,
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(winner)
+	json.NewEncoder(w).Encode(response)
 }
 
 func (h *MusicStateHandler) DeleteMusicState(w http.ResponseWriter, r *http.Request) {
