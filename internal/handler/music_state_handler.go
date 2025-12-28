@@ -32,6 +32,19 @@ func NewMusicStateHandler(store *store.PartitionedMusicState) *MusicStateHandler
 	}
 }
 
+// toResponseFormat converts MusicState to response format without client data
+func toResponseFormat(state *model.MusicState) map[string]interface{} {
+	if state == nil {
+		return nil
+	}
+	return map[string]interface{}{
+		"metadata":      state.Metadata,
+		"playbackState": state.PlaybackState,
+		"updatedAt":     state.UpdatedAt,
+		"version":       state.Version,
+	}
+}
+
 func (h *MusicStateHandler) UpdateMusicState(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -64,21 +77,7 @@ func (h *MusicStateHandler) GetWinnerMusicState(w http.ResponseWriter, r *http.R
 	}
 
 	winner := h.store.Winner()
-
-	if winner == nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(nil)
-		return
-	}
-
-	// Create response without client field
-	response := map[string]interface{}{
-		"metadata":      winner.Metadata,
-		"playbackState": winner.PlaybackState,
-		"updatedAt":     winner.UpdatedAt,
-		"version":       winner.Version,
-	}
+	response := toResponseFormat(winner)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -97,15 +96,8 @@ func (h *MusicStateHandler) WinnerWebSocket(w http.ResponseWriter, r *http.Reque
 
 	// Send current winner immediately upon connection
 	winner := h.store.Winner()
-	if winner != nil {
-		// Create response without client field
-		response := map[string]interface{}{
-			"metadata":      winner.Metadata,
-			"playbackState": winner.PlaybackState,
-			"updatedAt":     winner.UpdatedAt,
-			"version":       winner.Version,
-		}
-
+	response := toResponseFormat(winner)
+	if response != nil {
 		if err := conn.WriteJSON(response); err != nil {
 			log.Println("WebSocket write error:", err)
 			return
@@ -122,14 +114,7 @@ func (h *MusicStateHandler) WinnerWebSocket(w http.ResponseWriter, r *http.Reque
 
 	// Listen for updates and send to client
 	for state := range client.send {
-		// Create response without client field
-		response := map[string]interface{}{
-			"metadata":      state.Metadata,
-			"playbackState": state.PlaybackState,
-			"updatedAt":     state.UpdatedAt,
-			"version":       state.Version,
-		}
-
+		response := toResponseFormat(state)
 		if err := client.conn.WriteJSON(response); err != nil {
 			log.Println("WebSocket write error:", err)
 			return
