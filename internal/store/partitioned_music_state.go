@@ -76,8 +76,19 @@ func (p *PartitionedMusicState) Update(state MusicState) {
 }
 
 func (p *PartitionedMusicState) Remove(clientID string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	oldWinner := p.Winner()
+
 	delete(p.playing, clientID)
 	delete(p.notPlaying, clientID)
+
+	// Broadcast the updated winner
+	newWinner := p.Winner()
+	if !areStatesEqual(oldWinner, newWinner) {
+		p.broadcast()
+	}
 }
 
 func (p *PartitionedMusicState) Winner() *MusicState {
